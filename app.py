@@ -17,9 +17,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 st.set_page_config(page_title="Disparador - PDV Pet", page_icon="🐾", layout="centered")
 
 st.title("🚀 Central de Disparo Automatizado")
-st.write("Selecione a filial desejada, configure o modo de envio e clique no botão para executar todo o processo de forma automática.")
+st.write("Selecione a filial, o tipo de relatório desejado e clique no botão para executar o processo de forma automática.")
 
-# Configurações internas (Puxadas dos Secrets do Streamlit Cloud ou valores padrão)
 REMETENTE_EMAIL = st.secrets.get("EMAIL_REMETENTE", "beneditobandola@gmail.com")
 REMETENTE_SENHA = st.secrets.get("SENHA_EMAIL", "")
 USUARIO_PDV = st.secrets.get("USUARIO_PDV", "")
@@ -93,7 +92,7 @@ def baixar_dados_pdvpet():
         finally:
             browser.close()
 
-def gerar_pdf_organizado(filial, df_precos_filial, df_op_filial):
+def gerar_pdf_organizado(filial, df_precos_filial, df_op_filial, tipo_relatorio):
     nome_arquivo = f"Relatorio_{filial.replace(' ', '_').replace('-', '')}.pdf"
     caminho_pdf = os.path.join(PASTA_PROJETO, nome_arquivo)
     
@@ -108,43 +107,51 @@ def gerar_pdf_organizado(filial, df_precos_filial, df_op_filial):
     elements.append(Paragraph("<b>Relatório Executivo - PDV Pet</b>", title_style))
     elements.append(Paragraph(f"<b>Filial:</b> {filial} | <b>Gerado em:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", sub_style))
 
-    elements.append(Paragraph("1. Auditoria de Preços Acima do Teto", sec_style))
-    if not df_precos_filial.empty:
-        dados_preco = [["PDV / Cidade", "Produto", "Lido", "Teto", "Status"]]
-        for _, row in df_precos_filial.iterrows():
-            dados_preco.append([str(row['Pdv_Com_Cidade']), str(row['Item_Nome']), f"R$ {row['Preco_Lido']:.2f}", f"R$ {row['Preco_Maximo']:.2f}", str(row['Status'])])
-        t_preco = Table(dados_preco, colWidths=[150, 160, 55, 55, 140])
-        t_preco.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor('#ffebe9')), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#ffc1c0')), ('FONTSIZE', (0,0), (-1,-1), 7.5)]))
-        elements.append(t_preco)
-    else:
-        elements.append(Paragraph("✅ Nenhum preço acima do teto detectado.", ParagraphStyle('OkPreco', fontSize=9, textColor=colors.HexColor('#059669'))))
-    
-    elements.append(Spacer(1, 10))
+    # Bloco 1: Preços Fora do Teto (Exibido se escolhido "Enviar Somente Preços Fora do Range" ou "Todos")
+    if tipo_relatorio in ["Enviar Somente Preços Fora do Range", "Enviar Todos"]:
+        elements.append(Paragraph("1. Auditoria de Preços Acima do Teto", sec_style))
+        if not df_precos_filial.empty:
+            dados_preco = [["PDV / Cidade", "Produto", "Lido", "Teto", "Status"]]
+            for _, row in df_precos_filial.iterrows():
+                dados_preco.append([str(row['Pdv_Com_Cidade']), str(row['Item_Nome']), f"R$ {row['Preco_Lido']:.2f}", f"R$ {row['Preco_Maximo']:.2f}", str(row['Status'])])
+            t_preco = Table(dados_preco, colWidths=[150, 160, 55, 55, 140])
+            t_preco.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor('#ffebe9')), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#ffc1c0')), ('FONTSIZE', (0,0), (-1,-1), 7.5)]))
+            elements.append(t_preco)
+        else:
+            elements.append(Paragraph("✅ Nenhum preço acima do teto detectado.", ParagraphStyle('OkPreco', fontSize=9, textColor=colors.HexColor('#059669'))))
+        
+        elements.append(Spacer(1, 10))
 
-    elements.append(Paragraph("2. Oportunidades por Categoria (Item a Item)", sec_style))
-    if not df_op_filial.empty:
-        itens_unicos = df_op_filial['Item'].unique()
-        for item in itens_unicos:
-            cor = CORES_ITENS.get(item, colors.HexColor('#333333'))
-            estilo_item = ParagraphStyle(f'Style_{item}', fontSize=9.5, textColor=cor, fontName='Helvetica-Bold', spaceBefore=4)
-            elements.append(Paragraph(f"• Categoria: {item}", estilo_item))
-            
-            df_sub = df_op_filial[df_op_filial['Item'] == item]
-            for _, r in df_sub.iterrows():
-                elements.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;- PDV: {r['Pdv_Com_Cidade']}", ParagraphStyle('SubIt', fontSize=8, textColor=colors.HexColor('#4b5563'))))
-    else:
-        elements.append(Paragraph("🏆 Nenhuma oportunidade pendente encontrada.", ParagraphStyle('OkOp', fontSize=9, textColor=colors.HexColor('#059669'))))
+    # Bloco 2: Oportunidades (Exibido se escolhido "Enviar Lista de Oportunidades" ou "Enviar Todos")
+    if tipo_relatorio in ["Enviar Lista de Oportunidades", "Enviar Todos"]:
+        elements.append(Paragraph("2. Oportunidades por Categoria (Item a Item)", sec_style))
+        if not df_op_filial.empty:
+            itens_unicos = df_op_filial['Item'].unique()
+            for item in itens_unicos:
+                cor = CORES_ITENS.get(item, colors.HexColor('#333333'))
+                estilo_item = ParagraphStyle(f'Style_{item}', fontSize=9.5, textColor=cor, fontName='Helvetica-Bold', spaceBefore=4)
+                elements.append(Paragraph(f"• Categoria: {item}", estilo_item))
+                
+                df_sub = df_op_filial[df_op_filial['Item'] == item]
+                for _, r in df_sub.iterrows():
+                    elements.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;- PDV: {r['Pdv_Com_Cidade']}", ParagraphStyle('SubIt', fontSize=8, textColor=colors.HexColor('#4b5563'))))
+        else:
+            elements.append(Paragraph("🏆 Nenhuma oportunidade pendente encontrada.", ParagraphStyle('OkOp', fontSize=9, textColor=colors.HexColor('#059669'))))
 
     doc.build(elements)
     return caminho_pdf
 
 st.markdown("---")
 
-# Opções limpas na tela
 enviar_apenas_para_mim = st.checkbox("Enviar apenas para o meu e-mail (Modo Teste)", value=True)
 
 lista_opcoes_filiais = ["Todas as Filiais"] + list(EMAILS_PROMOTORES.keys())
 filial_selecionada = st.selectbox("Selecione a Filial:", lista_opcoes_filiais)
+
+tipo_relatorio_escolhido = st.radio(
+    "Selecione o tipo de conteúdo do relatório:",
+    ["Enviar Somente Preços Fora do Range", "Enviar Lista de Oportunidades", "Enviar Todos"]
+)
 
 st.markdown("---")
 
@@ -191,7 +198,6 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
                     alertas_preco.append({'Distribuidor': row['Distribuidor'], 'Pdv_Com_Cidade': row['Pdv_Com_Cidade'], 'Item_Nome': chave, 'Preco_Lido': preco, 'Preco_Maximo': PRECOS_MAXIMOS[chave], 'Status': row['Status']})
             df_alertas_preco = pd.DataFrame(alertas_preco)
 
-            # Define quais filiais serão processadas com base na escolha da tela
             if filial_selecionada == "Todas as Filiais":
                 filiais_para_processar = list(EMAILS_PROMOTORES.keys())
             else:
@@ -202,14 +208,14 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
                 df_op_f = df_oportunidades[df_oportunidades['Distribuidor'] == filial] if not df_oportunidades.empty else pd.DataFrame()
                 df_pr_f = df_alertas_preco[df_alertas_preco['Distribuidor'] == filial] if not df_alertas_preco.empty else pd.DataFrame()
                 
-                caminho_pdf = gerar_pdf_organizado(filial, df_pr_f, df_op_f)
+                caminho_pdf = gerar_pdf_organizado(filial, df_pr_f, df_op_f, tipo_relatorio_escolhido)
                 destinatarios = EMAILS_MEUS if enviar_apenas_para_mim else EMAILS_PROMOTORES.get(filial, EMAILS_MEUS)
                 
                 msg = MIMEMultipart()
                 msg["From"] = REMETENTE_EMAIL
                 msg["To"] = ", ".join(destinatarios)
                 msg["Subject"] = f"Relatório Organizado - PDV Pet ({filial})"
-                msg.attach(MIMEText(f"<h3>Relatório Executivo</h3><p>Filial: <b>{filial}</b></p>", "html"))
+                msg.attach(MIMEText(f"<h3>Relatório Executivo</h3><p>Filial: <b>{filial}</b> | Tipo: <b>{tipo_relatorio_escolhido}</b></p>", "html"))
                 
                 if os.path.exists(caminho_pdf):
                     with open(caminho_pdf, "rb") as f:
