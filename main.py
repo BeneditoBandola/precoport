@@ -57,7 +57,7 @@ def obter_intervalo_historico():
       break
 
   if not periodo_atual:
-    return None, None, None, None
+    return None, None, None
 
   indice_anterior = max(0, indice_atual - 1)
   data_inicio_geral = PERIODOS[chaves_periodos[indice_anterior]]["inicio"]
@@ -71,7 +71,7 @@ def baixar_dados_pdv():
 
   if not periodo_atual:
     print("❌ A data atual está fora dos períodos cadastrados.")
-    return None
+    return None, None
 
   print(
       f"📅 Período vigente: {periodo_atual} | Baixando histórico de {data_inicio}"
@@ -79,7 +79,8 @@ def baixar_dados_pdv():
   )
 
   with sync_playwright() as p:
-    browser = p.chromium.launch(headless=False)
+    # Alterado para True para rodar perfeitamente no GitHub Actions
+    browser = p.chromium.launch(headless=True)
     context = browser.new_context()
     page = context.new_page()
 
@@ -135,140 +136,5 @@ def baixar_dados_pdv():
     return caminho_arquivo, periodo_atual
 
 
-def processar_analise_completa(caminho_csv, periodo_atual):
-  print(
-      "\n--- PROCESSANDO ANÁLISE COMPLETA (OPORTUNIDADES + PREÇOS + ITENS"
-      f" ESPECIAIS) PARA {periodo_atual} ---"
-  )
-  df = pd.read_csv(caminho_csv, sep=";", encoding="latin1")
-
-  df["Data_Parsed"] = pd.to_datetime(
-      df["Data"].astype(str).str.split(" ").str[0],
-      format="%d/%m/%Y",
-      errors="coerce",
-  )
-
-  p_info = PERIODOS[periodo_atual]
-  inicio_atual = pd.to_datetime(p_info["inicio"])
-  fim_atual = pd.to_datetime(p_info["fim"])
-
-  df_p_atual = df[
-      (df["Data_Parsed"] >= inicio_atual) & (df["Data_Parsed"] <= fim_atual)
-  ]
-
-  chaves_periodos = list(PERIODOS.keys())
-  idx = chaves_periodos.index(periodo_atual)
-  if idx > 0:
-    p_ant_info = PERIODOS[chaves_periodos[idx - 1]]
-    inicio_ant = pd.to_datetime(p_ant_info["inicio"])
-    fim_ant = pd.to_datetime(p_ant_info["fim"])
-    df_p_anterior = df[
-        (df["Data_Parsed"] >= inicio_ant) & (df["Data_Parsed"] <= fim_ant)
-    ]
-  else:
-    print("⚠️ Não há período anterior cadastrado para comparativo.")
-    return
-
-  # 1. ANÁLISE DE SMALL BAGS (Oportunidades)
-  print("\n📦 === 1. OPORTUNIDADES DE SMALL BAGS ===")
-  colunas_sb = ["Distribuidor", "Usuario", "Pdv", "Cidade", "Embalagem", "OpcaoEmbalagem"]
-  sb_ant = df_p_anterior[df_p_anterior["Embalagem"].notna() & df_p_anterior["Embalagem"].str.contains("Small Bags", case=False, na=False)][colunas_sb].drop_duplicates()
-  sb_atual = df_p_atual[df_p_atual["Embalagem"].notna() & df_p_atual["Embalagem"].str.contains("Small Bags", case=False, na=False)][colunas_sb].drop_duplicates()
-
-  op_sb = pd.merge(sb_ant, sb_atual, on=colunas_sb, how="left", indicator=True)
-  op_sb = op_sb[op_sb["_merge"] == "left_only"].drop(columns=["_merge"])
-
-  for filial, g_filial in op_sb.groupby("Distribuidor"):
-    print(f"\n🏢 FILIAL: {filial} (Small Bags Pendentes)")
-    for promotor, g_prom in g_filial.groupby("Usuario"):
-      print(f"  👤 Promotor: {promotor} ({len(g_prom)} pendências)")
-      for _, row in g_prom.iterrows():
-        print(f"     - PDV: {row['Pdv']} | Cidade: {row['Cidade']} | Embalagem: {row['Embalagem']} | Sabor/Tipo: {row['OpcaoEmbalagem']}")
-
-  # 2. ANÁLISE DE PONTO EXTRA DE SACHÊS/PETISCOS (Oportunidades e Contagem)
-  print("\n⭐ === 2. ANÁLISE DE PONTO EXTRA DE SACHÊS/PETISCOS ===")
-  colunas_pe = ["Distribuidor", "Usuario", "Pdv", "Cidade", "Item"]
-  pe_ant = df_p_anterior[df_p_anterior["Item"].str.contains("Ponto Extra", case=False, na=False)][colunas_pe].drop_duplicates()
-  pe_atual = df_p_atual[df_p_atual["Item"].str.contains("Ponto Extra", case=False, na=False)][colunas_pe].drop_duplicates()
-
-  contagem_atual = df_p_atual[df_p_atual["Item"].str.contains("Ponto Extra", case=False, na=False)].groupby(["Distribuidor", "Usuario", "Pdv", "Cidade"]).size().reset_index(name="Total_Leituras_Atuais")
-  print("\n📊 Contagem de Leituras de Ponto Extra no Período Atual por PDV:")
-  print(contagem_atual.to_string(index=False))
-
-  op_pe = pd.merge(pe_ant, pe_atual, on=colunas_pe, how="left", indicator=True)
-  op_pe = op_pe[op_pe["_merge"] == "left_only"].drop(columns=["_merge"])
-
-  for filial, g_filial in op_pe.groupby("Distribuidor"):
-    print(f"\n🏢 FILIAL: {filial} (Ponto Extra Oportunidades)")
-    for promotor, g_prom in g_filial.groupby("Usuario"):
-      print(f"  👤 Promotor: {promotor} ({len(g_prom)} pendências)")
-      for _, row in g_prom.iterrows():
-        print(f"     - PDV: {row['Pdv']} | Cidade: {row['Cidade']} | Item/Ponto Extra: {row['Item']}")
-
-  # 3. AUDITORIA DE PREÇOS ACIMA DO TETO POR TIPO/PESO (Small Bags)
-  print("\n💰 === 3. AUDITORIA DE PREÇOS ACIMA DO TETO (SMALL BAGS POR TIPO/PESO) ===")
-  df_p_atual['PrecoKg_Num'] = pd.to_numeric(df_p_atual['PrecoKg'].astype(str).str.replace(',', '.'), errors='coerce')
-  df_sb_atual = df_p_atual[df_p_atual["Embalagem"].notna() & df_p_atual["Embalagem"].str.contains("Small Bags", case=False, na=False)].copy()
-
-  alertas_preco = []
-  for _, row in df_sb_atual.iterrows():
-    opcao = str(row['OpcaoEmbalagem']).strip()
-    embalagem = str(row['Embalagem']).strip()
-    chave_produto = f"{opcao} - {embalagem}"
-    
-    if chave_produto in PRECOS_MAXIMOS:
-      teto = PRECOS_MAXIMOS[chave_produto]
-      preco_praticado = row['PrecoKg_Num']
-      if pd.notna(preco_praticado) and preco_praticado > teto:
-        alertas_preco.append({
-            "Distribuidor": row["Distribuidor"],
-            "Usuario": row["Usuario"],
-            "Pdv": row["Pdv"],
-            "Cidade": row["Cidade"],
-            "Produto": chave_produto,
-            "PrecoPraticado": preco_praticado,
-            "PrecoMaximoTeto": teto
-        })
-
-  if alertas_preco:
-    df_alertas = pd.DataFrame(alertas_preco)
-    for filial, g_filial in df_alertas.groupby("Distribuidor"):
-      print(f"\n🏢 FILIAL: {filial} (Alertas de Preço Acima do Teto)")
-      for _, row in g_filial.iterrows():
-        print(f"  ⚠️ PDV: {row['Pdv']} | Cidade: {row['Cidade']} | Promotor: {row['Usuario']}")
-        print(f"     Produto: {row['Produto']} | Preço Lido: R$ {row['PrecoPraticado']:.2f} | Teto Permitido: R$ {row['PrecoMaximoTeto']:.2f}")
-  else:
-    print("✅ Nenhum preço acima do teto foi encontrado nas Small Bags do período atual.")
-
-  # 4. ANÁLISE DE ITENS ESPECIAIS (Combos e Sheba) - Passado vs Atual
-  print("\n📦 === 4. OPORTUNIDADES EM ITENS ESPECIAIS (Combos e Sheba) ===")
-  itens_especiais = [
-      "Combos Virtuais Sachês",
-      "Combos Virtuais Petiscos",
-      "Sheba Cremoso - Leve 2 Pague 1",
-  ]
-  colunas_esp = ["Distribuidor", "Usuario", "Pdv", "Cidade", "Item"]
-
-  esp_ant = df_p_anterior[df_p_anterior["Item"].isin(itens_especiais)][colunas_esp].drop_duplicates()
-  esp_atual = df_p_atual[df_p_atual["Item"].isin(itens_especiais)][colunas_esp].drop_duplicates()
-
-  op_esp = pd.merge(esp_ant, esp_atual, on=colunas_esp, how="left", indicator=True)
-  op_esp = op_esp[op_esp["_merge"] == "left_only"].drop(columns=["_merge"])
-
-  if not op_esp.empty:
-    for filial, g_filial in op_esp.groupby("Distribuidor"):
-      print(f"\n🏢 FILIAL: {filial} (Itens Especiais Pendentes)")
-      for promotor, g_prom in g_filial.groupby("Usuario"):
-        print(f"  👤 Promotor: {promotor} ({len(g_prom)} pendências)")
-        for _, row in g_prom.iterrows():
-          print(f"     - PDV: {row['Pdv']} | Cidade: {row['Cidade']} | Item: {row['Item']}")
-  else:
-    print("✅ Nenhuma pendência encontrada para estes itens especiais no período atual.")
-
-
 if __name__ == "__main__":
   arquivo, periodo = baixar_dados_pdv()
-  if arquivo:
-    processar_analise_completa(arquivo, periodo)
-
-  input("\nPressione ENTER para fechar a janela...")
