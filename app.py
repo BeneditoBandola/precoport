@@ -9,6 +9,9 @@ from playwright.sync_api import sync_playwright
 import pandas as pd
 import streamlit as st
 
+# Garante a instalação do navegador no Streamlit Cloud
+os.system("playwright install chromium")
+
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -107,7 +110,6 @@ def gerar_pdf_organizado(filial, df_precos_filial, df_op_filial, tipo_relatorio)
     elements.append(Paragraph("<b>Relatório Executivo - PDV Pet</b>", title_style))
     elements.append(Paragraph(f"<b>Filial:</b> {filial} | <b>Gerado em:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", sub_style))
 
-    # Bloco 1: Preços Fora do Teto (Exibido se escolhido "Enviar Somente Preços Fora do Range" ou "Todos")
     if tipo_relatorio in ["Enviar Somente Preços Fora do Range", "Enviar Todos"]:
         elements.append(Paragraph("1. Auditoria de Preços Acima do Teto", sec_style))
         if not df_precos_filial.empty:
@@ -122,7 +124,6 @@ def gerar_pdf_organizado(filial, df_precos_filial, df_op_filial, tipo_relatorio)
         
         elements.append(Spacer(1, 10))
 
-    # Bloco 2: Oportunidades (Exibido se escolhido "Enviar Lista de Oportunidades" ou "Enviar Todos")
     if tipo_relatorio in ["Enviar Lista de Oportunidades", "Enviar Todos"]:
         elements.append(Paragraph("2. Oportunidades por Categoria (Item a Item)", sec_style))
         if not df_op_filial.empty:
