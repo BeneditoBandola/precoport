@@ -14,10 +14,10 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-st.set_page_config(page_title="Painel de Gestão - PDV Pet", page_icon="🐾", layout="wide")
+st.set_page_config(page_title="Disparador - PDV Pet", page_icon="🐾", layout="centered")
 
-st.title("📊 Painel de Oportunidades e Auditoria de Preços")
-st.write("Execução completa: Login, download, processamento, geração de PDF organizado e envio.")
+st.title("🚀 Central de Disparo Automatizado")
+st.write("Clique no botão abaixo para baixar os dados atualizados, processar os relatórios em PDF e disparar os e-mails para as filiais.")
 
 EMAILS_PROMOTORES = {
     "MINASSAL LTDA - POCOS DE CALDAS": ["pamelaalmeida5@hotmail.com"],
@@ -105,7 +105,6 @@ def gerar_pdf_organizado(filial, df_precos_filial, df_op_filial):
     elements.append(Paragraph("<b>Relatório Executivo - PDV Pet</b>", title_style))
     elements.append(Paragraph(f"<b>Filial:</b> {filial} | <b>Gerado em:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", sub_style))
 
-    # 1. BLOCO DE PREÇOS FORA DO TETO (PRIMEIRO)
     elements.append(Paragraph("1. Auditoria de Preços Acima do Teto", sec_style))
     if not df_precos_filial.empty:
         dados_preco = [["PDV / Cidade", "Produto", "Lido", "Teto", "Status"]]
@@ -119,7 +118,6 @@ def gerar_pdf_organizado(filial, df_precos_filial, df_op_filial):
     
     elements.append(Spacer(1, 10))
 
-    # 2. BLOCO DE OPORTUNIDADES ITEM A ITEM COM CORES DIFERENTES
     elements.append(Paragraph("2. Oportunidades por Categoria (Item a Item)", sec_style))
     if not df_op_filial.empty:
         itens_unicos = df_op_filial['Item'].unique()
@@ -137,21 +135,26 @@ def gerar_pdf_organizado(filial, df_precos_filial, df_op_filial):
     doc.build(elements)
     return caminho_pdf
 
-st.sidebar.header("⚙️ Configurações")
-enviar_apenas_para_mim = st.sidebar.checkbox("Enviar apenas para o meu e-mail (Teste)", value=True)
-remetente_email = st.sidebar.text_input("Seu E-mail (Remetente):", value="beneditobandola@gmail.com")
-remetente_senha = st.sidebar.text_input("Senha de App do E-mail:", type="password")
+st.markdown("---")
+enviar_apenas_para_mim = st.checkbox("Enviar apenas para o meu e-mail (Modo Teste)", value=True)
+remetente_email = st.text_input("E-mail Remetente:", value="beneditobandola@gmail.com")
+remetente_senha = st.text_input("Senha de App do E-mail:", type="password")
 
-if st.button("🚀 Executar Automação Completa e Enviar"):
+st.markdown("---")
+if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
     if not remetente_email or not remetente_senha:
-        st.error("Preencha o e-mail remetente e a senha.")
+        st.error("Preencha o e-mail remetente e a senha de aplicativo.")
     else:
-        with st.spinner("Baixando dados e gerando relatórios organizados..."):
+        status_container = st.status("Executando automação...", expanded=True)
+        try:
+            status_container.write("🌐 Conectando ao site do PDV Pet e baixando dados...")
             sucesso = baixar_dados_pdvpet()
+            
             if not os.path.exists(CAMINHO_CSV_FINAL):
-                st.error("❌ Erro ao obter os dados do PDV Pet.")
+                status_container.update(label="❌ Erro ao baixar dados.", state="error")
                 st.stop()
             
+            status_container.write("📊 Processando cruzamentos e filtrando por filial...")
             df = pd.read_csv(CAMINHO_CSV_FINAL, sep=';', encoding='latin1')
             df['Data_Parsed'] = pd.to_datetime(df['Data'].astype(str).str.split(' ').str[0], format='%d/%m/%Y', errors='coerce')
             df['Preco_Num'] = pd.to_numeric(df['PrecoKg'].astype(str).str.replace('R$', '', regex=False).str.strip().str.replace(',', '.'), errors='coerce')
@@ -179,12 +182,12 @@ if st.button("🚀 Executar Automação Completa e Enviar"):
                     alertas_preco.append({'Distribuidor': row['Distribuidor'], 'Pdv_Com_Cidade': row['Pdv_Com_Cidade'], 'Item_Nome': chave, 'Preco_Lido': preco, 'Preco_Maximo': PRECOS_MAXIMOS[chave], 'Status': row['Status']})
             df_alertas_preco = pd.DataFrame(alertas_preco)
 
+            status_container.write("📄 Gerando PDFs organizados e enviando e-mails...")
             for filial in EMAILS_PROMOTORES.keys():
                 df_op_f = df_oportunidades[df_oportunidades['Distribuidor'] == filial] if not df_oportunidades.empty else pd.DataFrame()
                 df_pr_f = df_alertas_preco[df_alertas_preco['Distribuidor'] == filial] if not df_alertas_preco.empty else pd.DataFrame()
                 
                 caminho_pdf = gerar_pdf_organizado(filial, df_pr_f, df_op_f)
-                
                 destinatarios = EMAILS_MEUS if enviar_apenas_para_mim else EMAILS_PROMOTORES.get(filial, EMAILS_MEUS)
                 
                 msg = MIMEMultipart()
@@ -199,20 +202,14 @@ if st.button("🚀 Executar Automação Completa e Enviar"):
                         part['Content-Disposition'] = f'attachment; filename="{os.path.basename(caminho_pdf)}"'
                         msg.attach(part)
                 
-                try:
-                    server = smtplib.SMTP('smtp.gmail.com', 587)
-                    server.starttls()
-                    server.login(remetente_email, remetente_senha)
-                    server.sendmail(remetente_email, destinatarios, msg.as_string())
-                    server.quit()
-                except Exception:
-                    pass
+                server = smtplib.SMTP('smtp.gmail.com', 587)
+                server.starttls()
+                server.login(remetente_email, remetente_senha)
+                server.sendmail(remetente_email, destinatarios, msg.as_string())
+                server.quit()
 
-        st.success("🎉 Processo completo executado com sucesso!")
-
-st.subheader("👁️ Visualização dos Dados Carregados")
-if os.path.exists(CAMINHO_CSV_FINAL):
-    df_preview = pd.read_csv(CAMINHO_CSV_FINAL, sep=';', encoding='latin1')
-    st.dataframe(df_preview.head(100))
-else:
-    st.info("Nenhum dado carregado ainda. Clique no botão acima para iniciar.")
+            status_container.update(label="✅ Processo concluído com sucesso!", state="complete")
+            st.success("Todos os relatórios em PDF foram gerados e enviados por e-mail com sucesso!")
+        except Exception as e:
+            status_container.update(label="❌ Erro durante a execução.", state="error")
+            st.error(f"Detalhes do erro: {e}")
