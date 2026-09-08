@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: '0 6 * * *'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -33,4 +36,4 @@ jobs:
           git config --global user.email "robo@actions.com"
           git add historico_p9_p10.csv
           git commit -m "Atualizacao automatica de dados do PDV" || echo "Sem mudanças para commitar"
-          git push
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main
