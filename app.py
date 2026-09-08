@@ -1,9 +1,16 @@
 from datetime import datetime
+import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 import pandas as pd
 import streamlit as st
+
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(
     page_title="Painel de Gestão - PDV Pet", page_icon="🐾", layout="wide"
@@ -26,6 +33,7 @@ EMAILS_MEUS = [
     "benedito.bandola@minassal.com.br"
 ]
 
+PASTA_PROJETO = os.path.dirname(os.path.abspath(__file__))
 
 @st.cache_data
 def carregar_dados():
@@ -35,6 +43,42 @@ def carregar_dados():
     except FileNotFoundError:
         return None
 
+def gerar_pdf_relatorio(filial, df_subset):
+    nome_arquivo = f"Relatorio_PDV_Pet_{filial.replace(' ', '_').replace('-', '')}.pdf"
+    caminho_pdf = os.path.join(PASTA_PROJETO, nome_arquivo)
+    
+    doc = SimpleDocTemplate(caminho_pdf, pagesize=letter, rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=14, textColor=colors.HexColor('#1f6feb'), spaceAfter=6)
+    sub_style = ParagraphStyle('SubStyle', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#57606a'), spaceAfter=12)
+    
+    elements = []
+    elements.append(Paragraph(f"<b>Relatório Executivo - PDV Pet</b>", title_style))
+    elements.append(Paragraph(f"<b>Filial:</b> {filial} | <b>Gerado em:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", sub_style))
+
+    if not df_subset.empty:
+        # Monta uma tabela simples com os primeiros registros para o PDF
+        colunas_exibir = [c for c in ['Pdv', 'Item', 'PrecoKg', 'Status'] if c in df_subset.columns]
+        if not colunas_exibir:
+            colunas_exibir = df_subset.columns[:4]
+            
+        dados_tabela = [[str(c) for c in colunas_exibir]]
+        for _, row in df_subset.head(30).iterrows():
+            dados_tabela.append([str(row.get(c, '')) for c in colunas_exibir])
+
+        t = Table(dados_tabela)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f6f8fa')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#d0d7de')),
+            ('FONTSIZE', (0,0), (-1,-1), 7.5),
+        ]))
+        elements.append(t)
+    else:
+        elements.append(Paragraph("Nenhum dado encontrado para os filtros selecionados.", styles['Normal']))
+
+    doc.build(elements)
+    return caminho_pdf
 
 df = carregar_dados()
 
@@ -48,15 +92,9 @@ else:
 
     st.sidebar.subheader("1. Selecione os Blocos do Relatório")
     enviar_sb = st.sidebar.checkbox("📦 Oportunidades Small Bags", value=True)
-    enviar_pe = st.sidebar.checkbox(
-        "⭐ Oportunidades Ponto Extra", value=True
-    )
-    enviar_preco = st.sidebar.checkbox(
-        "💰 Alertas de Preços Acima do Teto", value=True
-    )
-    enviar_esp = st.sidebar.checkbox(
-        "🔥 Oportunidades Itens Especiais", value=True
-    )
+    enviar_pe = st.sidebar.checkbox("⭐ Oportunidades Ponto Extra", value=True)
+    enviar_preco = st.sidebar.checkbox("💰 Alertas de Preços Acima do Teto", value=True)
+    enviar_esp = st.sidebar.checkbox("🔥 Oportunidades Itens Especiais", value=True)
 
     st.sidebar.subheader("2. Seleção de Filial")
     coluna_distribuidor = 'Distribuidor' if 'Distribuidor' in df.columns else None
@@ -74,41 +112,53 @@ else:
 
     if st.sidebar.button("🚀 Enviar Relatório por E-mail"):
         if not remetente_email or not remetente_senha:
-            st.sidebar.error("Preencha o e-mail remetente e a senha.")
+            st.sidebar.error("Preencha o e-mail remetente e a senha de aplicativo.")
         else:
             try:
-                if enviar_apenas_para_mim:
-                    destinatarios = EMAILS_MEUS
-                else:
-                    if filial_escolhida == "Todas":
-                        destinatarios = []
-                        for lista in EMAILS_PROMOTORES.values():
-                            destinatarios.extend(lista)
-                        destinatarios = list(set(destinatarios))
+                filiais_alvo = list(EMAILS_PROMOTORES.keys()) if filial_escolhida == "Todas" else [filial_escolhida]
+                
+                for f_atual in filiais_alvo:
+                    if enviar_apenas_para_mim:
+                        destinatarios = EMAILS_MEUS
                     else:
-                        destinatarios = EMAILS_PROMOTORES.get(filial_escolhida, EMAILS_MEUS)
+                        destinatarios = EMAILS_PROMOTORES.get(f_atual, EMAILS_MEUS)
 
-                msg = MIMEMultipart()
-                msg["From"] = remetente_email
-                msg["To"] = ", ".join(destinatarios)
-                msg["Subject"] = f"Relatório Automatizado - PDV Pet ({filial_escolhida})"
+                    # Filtra os dados da filial se a coluna existir
+                    if coluna_distribuidor and coluna_distribuidor in df.columns:
+                        df_filial = df[df[coluna_distribuidor] == f_atual]
+                    else:
+                        df_filial = df
 
-                corpo_html = (
-                    f"<h3>Relatório Executivo - PDV Pet</h3>"
-                    f"<p>Filial selecionada: <b>{filial_escolhida}</b></p>"
-                    f"<p>Dados processados via painel Streamlit.</p>"
-                )
-                msg.attach(MIMEText(corpo_html, "html"))
+                    # Gera o PDF específico para essa filial
+                    caminho_pdf = gerar_pdf_relatorio(f_atual, df_filial)
 
-                servidor = smtplib.SMTP("smtp.gmail.com", 587)
-                servidor.starttls()
-                servidor.login(remetente_email, remetente_senha)
-                servidor.sendmail(msg["From"], destinatarios, msg.as_string())
-                servidor.quit()
+                    msg = MIMEMultipart()
+                    msg["From"] = remetente_email
+                    msg["To"] = ", ".join(destinatarios)
+                    msg["Subject"] = f"Relatório Automatizado - PDV Pet ({f_atual})"
 
-                st.success(f"✅ E-mail enviado com sucesso para: {', '.join(destinatarios)}!")
+                    corpo_html = (
+                        f"<h3>Relatório Executivo - PDV Pet</h3>"
+                        f"<p>Filial: <b>{f_atual}</b></p>"
+                        f"<p>Segue em anexo o relatório em PDF gerado pelo painel.</p>"
+                    )
+                    msg.attach(MIMEText(corpo_html, "html"))
+
+                    if os.path.exists(caminho_pdf):
+                        with open(caminho_pdf, "rb") as arquivo_f:
+                            parte_anexo = MIMEApplication(arquivo_f.read(), Name=os.path.basename(caminho_pdf))
+                            parte_anexo['Content-Disposition'] = f'attachment; filename="{os.path.basename(caminho_pdf)}"'
+                            msg.attach(parte_anexo)
+
+                    servidor = smtplib.SMTP("smtp.gmail.com", 587)
+                    servidor.starttls()
+                    servidor.login(remetente_email, remetente_senha)
+                    servidor.sendmail(msg["From"], destinatarios, msg.as_string())
+                    servidor.quit()
+
+                st.success(f"✅ Relatórios em PDF gerados e enviados com sucesso!")
             except Exception as e:
-                st.error(f"❌ Erro ao enviar: {e}")
+                st.error(f"❌ Erro ao gerar/enviar: {e}")
 
     st.subheader("👁️ Visualização dos Dados Carregados")
     st.dataframe(df.head(100))
