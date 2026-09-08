@@ -1,0 +1,37 @@
+name: Atualizar Dados PDV Pet
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Copiar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          playwright install chromium
+
+      - name: Executar automação de dados
+        run: python main.py
+
+      - name: Salvar novo CSV no repositório
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "Robo Automation"
+          git config --global user.email "robo@actions.com"
+          git add historico_p9_p10.csv
+          git diff --quiet && git diff --cached --quiet || git commit -m "Atualizacao automatica de dados do PDV"
+          git push Criando workflow de atualização
