@@ -17,7 +17,13 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 st.set_page_config(page_title="Disparador - PDV Pet", page_icon="🐾", layout="centered")
 
 st.title("🚀 Central de Disparo Automatizado")
-st.write("Clique no botão abaixo para baixar os dados atualizados, processar os relatórios em PDF e disparar os e-mails para as filiais.")
+st.write("Selecione a filial desejada, configure o modo de envio e clique no botão para executar todo o processo de forma automática.")
+
+# Configurações internas (Puxadas dos Secrets do Streamlit Cloud ou valores padrão)
+REMETENTE_EMAIL = st.secrets.get("EMAIL_REMETENTE", "beneditobandola@gmail.com")
+REMETENTE_SENHA = st.secrets.get("SENHA_EMAIL", "")
+USUARIO_PDV = st.secrets.get("USUARIO_PDV", "")
+SENHA_PDV = st.secrets.get("SENHA_PDV", "")
 
 EMAILS_PROMOTORES = {
     "MINASSAL LTDA - POCOS DE CALDAS": ["pamelaalmeida5@hotmail.com"],
@@ -30,9 +36,6 @@ EMAILS_MEUS = [
     "beneditobandola@gmail.com",
     "benedito.bandola@minassal.com.br"
 ]
-
-USUARIO_PDV = os.environ.get("USUARIO_PDV", "")
-SENHA_PDV = os.environ.get("SENHA_PDV", "")
 
 PASTA_PROJETO = os.path.dirname(os.path.abspath(__file__))
 CAMINHO_CSV_FINAL = os.path.join(PASTA_PROJETO, "historico_p9_p10.csv")
@@ -136,14 +139,20 @@ def gerar_pdf_organizado(filial, df_precos_filial, df_op_filial):
     return caminho_pdf
 
 st.markdown("---")
+
+# Opções limpas na tela
 enviar_apenas_para_mim = st.checkbox("Enviar apenas para o meu e-mail (Modo Teste)", value=True)
-remetente_email = st.text_input("E-mail Remetente:", value="beneditobandola@gmail.com")
-remetente_senha = st.text_input("Senha de App do E-mail:", type="password")
+
+lista_opcoes_filiais = ["Todas as Filiais"] + list(EMAILS_PROMOTORES.keys())
+filial_selecionada = st.selectbox("Selecione a Filial:", lista_opcoes_filiais)
 
 st.markdown("---")
+
 if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
-    if not remetente_email or not remetente_senha:
-        st.error("Preencha o e-mail remetente e a senha de aplicativo.")
+    if not REMETENTE_EMAIL or not REMETENTE_SENHA:
+        st.error("❌ As credenciais do remetente (EMAIL_REMETENTE e SENHA_EMAIL) não foram configuradas nas Secrets do Streamlit.")
+    elif not USUARIO_PDV or not SENHA_PDV:
+        st.error("❌ As credenciais do PDV (USUARIO_PDV e SENHA_PDV) não foram configuradas nas Secrets do Streamlit.")
     else:
         status_container = st.status("Executando automação...", expanded=True)
         try:
@@ -151,7 +160,7 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
             sucesso = baixar_dados_pdvpet()
             
             if not os.path.exists(CAMINHO_CSV_FINAL):
-                status_container.update(label="❌ Erro ao baixar dados.", state="error")
+                status_container.update(label="❌ Erro ao baixar dados do PDV Pet.", state="error")
                 st.stop()
             
             status_container.write("📊 Processando cruzamentos e filtrando por filial...")
@@ -182,8 +191,14 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
                     alertas_preco.append({'Distribuidor': row['Distribuidor'], 'Pdv_Com_Cidade': row['Pdv_Com_Cidade'], 'Item_Nome': chave, 'Preco_Lido': preco, 'Preco_Maximo': PRECOS_MAXIMOS[chave], 'Status': row['Status']})
             df_alertas_preco = pd.DataFrame(alertas_preco)
 
+            # Define quais filiais serão processadas com base na escolha da tela
+            if filial_selecionada == "Todas as Filiais":
+                filiais_para_processar = list(EMAILS_PROMOTORES.keys())
+            else:
+                filiais_para_processar = [filial_selecionada]
+
             status_container.write("📄 Gerando PDFs organizados e enviando e-mails...")
-            for filial in EMAILS_PROMOTORES.keys():
+            for filial in filiais_para_processar:
                 df_op_f = df_oportunidades[df_oportunidades['Distribuidor'] == filial] if not df_oportunidades.empty else pd.DataFrame()
                 df_pr_f = df_alertas_preco[df_alertas_preco['Distribuidor'] == filial] if not df_alertas_preco.empty else pd.DataFrame()
                 
@@ -191,7 +206,7 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
                 destinatarios = EMAILS_MEUS if enviar_apenas_para_mim else EMAILS_PROMOTORES.get(filial, EMAILS_MEUS)
                 
                 msg = MIMEMultipart()
-                msg["From"] = remetente_email
+                msg["From"] = REMETENTE_EMAIL
                 msg["To"] = ", ".join(destinatarios)
                 msg["Subject"] = f"Relatório Organizado - PDV Pet ({filial})"
                 msg.attach(MIMEText(f"<h3>Relatório Executivo</h3><p>Filial: <b>{filial}</b></p>", "html"))
@@ -204,12 +219,12 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
                 
                 server = smtplib.SMTP('smtp.gmail.com', 587)
                 server.starttls()
-                server.login(remetente_email, remetente_senha)
-                server.sendmail(remetente_email, destinatarios, msg.as_string())
+                server.login(REMETENTE_EMAIL, REMETENTE_SENHA)
+                server.sendmail(REMETENTE_EMAIL, destinatarios, msg.as_string())
                 server.quit()
 
             status_container.update(label="✅ Processo concluído com sucesso!", state="complete")
-            st.success("Todos os relatórios em PDF foram gerados e enviados por e-mail com sucesso!")
+            st.success("Os relatórios selecionados foram gerados e disparados com sucesso!")
         except Exception as e:
             status_container.update(label="❌ Erro durante a execução.", state="error")
             st.error(f"Detalhes do erro: {e}")
