@@ -85,7 +85,6 @@ def baixar_dados_pdvpet():
     st.error("❌ Usuário ou senha do PDV não configurados nas Secrets.")
     return False
 
-  # headless=True para rodar limpo e em segundo plano na nuvem
   with sync_playwright() as p:
     browser = p.chromium.launch(
         headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
@@ -349,10 +348,10 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
       ]
 
       p9_pares = df_p9[
-          ["Distribuidor", "Cidade_Clean", "Pdv_Com_Cidade", "Item", "Item"]
+          ["Distribuidor", "Cidade_Clean", "Pdv_Com_Cidade", "Item"]
       ].drop_duplicates()
       p10_pares = df_p10[
-          ["Distribuidor", "Cidade_Clean", "Pdv_Com_Cidade", "Item", "Item"]
+          ["Distribuidor", "Cidade_Clean", "Pdv_Com_Cidade", "Item"]
       ].drop_duplicates()
 
       df_oportunidades = pd.merge(
@@ -427,7 +426,7 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
         msg.attach(
             MIMEText(
                 f"<h3>Relatório Executivo</h3><p>Filial: <b>{filial_chave}</b> |"
-                f" Tipo: <b>{tipo_relatorio_escolhیدo}</b></p>",
+                f" Tipo: <b>{tipo_relatorio_escolhido}</b></p>",
                 "html",
             )
         )
