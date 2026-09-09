@@ -36,6 +36,7 @@ REMETENTE_SENHA = st.secrets.get("SENHA_EMAIL", "")
 USUARIO_PDV = st.secrets.get("USUARIO_PDV", "")
 SENHA_PDV = st.secrets.get("SENHA_PDV", "")
 
+# Dicionário de e-mails dos promotores por nome amigável da filial
 EMAILS_PROMOTORES = {
     "MINASSAL LTDA - POCOS DE CALDAS": ["pamelaalmeida5@hotmail.com"],
     "MINASSAL LTDA - SAO JOAO DA BOA VISTA": ["crbruno27123@gmail.com"],
@@ -44,6 +45,16 @@ EMAILS_PROMOTORES = {
         "fernandaferreira_jf@yahoo.com.br",
         "madallareis66@gmail.com",
     ],
+}
+
+# Mapeia como a filial aparece na interface para o valor EXATO correspondente na coluna 'Distribuidor' do CSV
+MAPEAMENTO_DISTRIBUIDOR = {
+    "MINASSAL LTDA - POCOS DE CALDAS": "MINASSAL LTDA - POCOS DE CALDAS",
+    "MINASSAL LTDA - SAO JOAO DA BOA VISTA": (
+        "MINASSAL LTDA"
+    ),  # Nome exato na planilha para São João
+    "MINASSAL LTDA - SAO JOSE DO RIO PRETO": "MINASSAL LTDA - SAO JOSE DO RIO PRETO",
+    "MINASSAL LTDA - JUIZ DE FORA": "MINASSAL LTDA - JUIZ DE FORA",
 }
 
 EMAILS_MEUS = ["beneditobandola@gmail.com", "benedito.bandola@minassal.com.br"]
@@ -368,35 +379,43 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
         filiais_para_processar = [filial_selecionada]
 
       status_container.write("📄 Gerando PDFs organizados e enviando e-mails...")
-      for filial in filiais_para_processar:
+      for filial_chave in filiais_para_processar:
+        distribuidor_csv = MAPEAMENTO_DISTRIBUIDOR.get(
+            filial_chave, filial_chave
+        )
+
         df_op_f = (
-            df_oportunidades[df_oportunidades["Distribuidor"] == filial]
+            df_oportunidades[
+                df_oportunidades["Distribuidor"] == distribuidor_csv
+            ]
             if not df_oportunidades.empty
             else pd.DataFrame()
         )
         df_pr_f = (
-            df_alertas_preco[df_alertas_preco["Distribuidor"] == filial]
+            df_alertas_preco[
+                df_alertas_preco["Distribuidor"] == distribuidor_csv
+            ]
             if not df_alertas_preco.empty
             else pd.DataFrame()
         )
 
         caminho_pdf = gerar_pdf_organizado(
-            filial, df_pr_f, df_op_f, tipo_relatorio_escolhido
+            filial_chave, df_pr_f, df_op_f, tipo_relatorio_escolhido
         )
         destinatarios = (
             EMAILS_MEUS
             if enviar_apenas_para_mim
-            else EMAILS_PROMOTORES.get(filial, EMAILS_MEUS)
+            else EMAILS_PROMOTORES.get(filial_chave, EMAILS_MEUS)
         )
 
         msg = MIMEMultipart()
         msg["From"] = REMETENTE_EMAIL
         msg["To"] = ", ".join(destinatarios)
-        msg["Subject"] = f"Relatório Organizado - PDV Pet ({filial})"
+        msg["Subject"] = f"Relatório Organizado - PDV Pet ({filial_chave})"
         msg.attach(
             MIMEText(
-                f"<h3>Relatório Executivo</h3><p>Filial: <b>{filial}</b> | Tipo:"
-                f" <b>{tipo_relatorio_escolhido}</b></p>",
+                f"<h3>Relatório Executivo</h3><p>Filial: <b>{filial_chave}</b> |"
+                f" Tipo: <b>{tipo_relatorio_escolhido}</b></p>",
                 "html",
             )
         )
