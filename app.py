@@ -59,7 +59,7 @@ MAPEAMENTO_DISTRIBUIDOR = {
 
 EMAILS_MEUS = ["beneditobandola@gmail.com", "benedito.bandola@minassal.com.br"]
 
-# Caminho temporário para o CSV (não polui o repositório do GitHub)
+# Caminho temporário para o CSV
 CAMINHO_CSV_FINAL = os.path.join(tempfile.gettempdir(), "historico_p9_p10.csv")
 
 # Períodos de Análise (P9 e P10)
@@ -85,6 +85,7 @@ CORES_ITENS = {
 
 def baixar_dados_pdvpet():
   if not USUARIO_PDV or not SENHA_PDV:
+    st.error("❌ Usuário ou senha do PDV não configurados nas Secrets.")
     return False
   with sync_playwright() as p:
     browser = p.chromium.launch(
@@ -122,7 +123,9 @@ def baixar_dados_pdvpet():
         page.click('button.btn-outline-success:has-text("Exportar")')
       download_info.value.save_as(CAMINHO_CSV_FINAL)
       return True
-    except Exception:
+    except Exception as e:
+      # Mostra o erro detalhado diretamente na tela para sabermos exatamente onde travou
+      st.error(f"❌ Erro detalhado no Playwright: {e}")
       return False
     finally:
       browser.close()
@@ -290,7 +293,7 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
       )
       sucesso = baixar_dados_pdvpet()
 
-      if not os.path.exists(CAMINHO_CSV_FINAL):
+      if not os.path.exists(CAMINHO_CSV_FINAL) or not sucesso:
         status_container.update(
             label="❌ Erro ao baixar dados do PDV Pet.", state="error"
         )
@@ -442,4 +445,4 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
       st.success("Os relatórios foram gerados e disparados com sucesso!")
     except Exception as e:
       status_container.update(label="❌ Erro durante a execução.", state="error")
-      st.error(f"Detalhes do erro: {e}")
+      st.error(f"Detalhes do erro geral: {e}")
