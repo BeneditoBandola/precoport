@@ -118,13 +118,16 @@ def baixar_dados_pdvpet():
       page.fill("#DataDe", INICIO_P9)
       page.fill("#DataAte", data_hoje)
       page.click('button[type="submit"]:has-text("Buscar")')
-      page.wait_for_timeout(8000)
-      with page.expect_download(timeout=60000) as download_info:
+
+      # Pausa de segurança para carregar os dados na tela
+      page.wait_for_timeout(10000)
+
+      # Timeout estendido para 90 segundos no download
+      with page.expect_download(timeout=90000) as download_info:
         page.click('button.btn-outline-success:has-text("Exportar")')
       download_info.value.save_as(CAMINHO_CSV_FINAL)
       return True
     except Exception as e:
-      # Mostra o erro detalhado diretamente na tela para sabermos exatamente onde travou
       st.error(f"❌ Erro detalhado no Playwright: {e}")
       return False
     finally:
