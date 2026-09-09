@@ -8,12 +8,16 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from zoneinfo import ZoneInfo
 import pandas as pd
+import streamlit as st
+
+# --- GARANTE A INSTALAÇÃO DO CHROMIUM NO STREAMLIT CLOUD ---
+os.system("playwright install chromium")
+
 from playwright.sync_api import sync_playwright
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-import streamlit as st
 
 # --- CONFIGURAÇÕES DA PÁGINA ---
 st.set_page_config(
@@ -44,7 +48,7 @@ EMAILS_PROMOTORES = {
 
 EMAILS_MEUS = ["beneditobandola@gmail.com", "benedito.bandola@minassal.com.br"]
 
-# Caminho temporário para o CSV (não suja o repositório do GitHub)
+# Caminho temporário para o CSV (não polui o repositório do GitHub)
 CAMINHO_CSV_FINAL = os.path.join(tempfile.gettempdir(), "historico_p9_p10.csv")
 
 # Períodos de Análise (P9 e P10)
