@@ -1,5 +1,4 @@
 from datetime import datetime
-from io import BytesIO
 import os
 import smtplib
 import tempfile
@@ -33,8 +32,8 @@ st.write(
 # --- CREDENCIAIS VIA SECRETS ---
 REMETENTE_EMAIL = st.secrets.get("EMAIL_REMETENTE", "beneditobandola@gmail.com")
 REMETENTE_SENHA = st.secrets.get("SENHA_EMAIL", "")
-USUARIO_PDV = st.secrets.get("USUARIO_PDV", "")
-SENHA_PDV = st.secrets.get("SENHA_PDV", "")
+USUARIO_PDV = st.secrets.get("USUARIO_PDV", "137.318.006-40")
+SENHA_PDV = st.secrets.get("SENHA_PDV", "Fizzvini1234@")
 
 # Dicionário de e-mails dos promotores por nome amigável da filial
 EMAILS_PROMOTORES = {
@@ -50,9 +49,7 @@ EMAILS_PROMOTORES = {
 # Mapeia como a filial aparece na interface para o valor EXATO correspondente na coluna 'Distribuidor' do CSV
 MAPEAMENTO_DISTRIBUIDOR = {
     "MINASSAL LTDA - POCOS DE CALDAS": "MINASSAL LTDA - POCOS DE CALDAS",
-    "MINASSAL LTDA - SAO JOAO DA BOA VISTA": (
-        "MINASSAL LTDA"
-    ),  # Nome exato na planilha para São João
+    "MINASSAL LTDA - SAO JOAO DA BOA VISTA": "MINASSAL LTDA",
     "MINASSAL LTDA - SAO JOSE DO RIO PRETO": "MINASSAL LTDA - SAO JOSE DO RIO PRETO",
     "MINASSAL LTDA - JUIZ DE FORA": "MINASSAL LTDA - JUIZ DE FORA",
 }
@@ -87,10 +84,11 @@ def baixar_dados_pdvpet():
   if not USUARIO_PDV or not SENHA_PDV:
     st.error("❌ Usuário ou senha do PDV não configurados nas Secrets.")
     return False
+
+  # headless=True para rodar limpo e em segundo plano na nuvem
   with sync_playwright() as p:
     browser = p.chromium.launch(
-        headless=True,
-        args=["--no-sandbox", "--disable-dev-shm-usage"],
+        headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
     )
     context = browser.new_context(viewport={"width": 1280, "height": 800})
     page = context.new_page()
@@ -105,28 +103,38 @@ def baixar_dados_pdvpet():
           USUARIO_PDV,
       )
       page.fill('input[type="password"]', SENHA_PDV)
+
       try:
         page.click('button[type="submit"], input[type="submit"]', timeout=5000)
       except Exception:
         page.keyboard.press("Enter")
+
       page.wait_for_load_state("networkidle")
       page.wait_for_selector("text=/Questionários|QUESTIONÁRIOS/i", timeout=60000)
       page.click("text=/Questionários|QUESTIONÁRIOS/i")
+
       page.wait_for_selector("#DataDe", timeout=60000)
       fuso_br = ZoneInfo("America/Sao_Paulo")
       data_hoje = datetime.now(fuso_br).strftime("%Y-%m-%d")
       page.fill("#DataDe", INICIO_P9)
       page.fill("#DataAte", data_hoje)
+
       page.click('button[type="submit"]:has-text("Buscar")')
+      page.wait_for_timeout(5000)
 
-      # Pausa de segurança para carregar os dados na tela
-      page.wait_for_timeout(10000)
+      # Clica em Exportar para gerar o arquivo no servidor
+      page.click('button.btn-outline-success:has-text("Exportar")')
 
-      # Timeout estendido para 90 segundos no download
-      with page.expect_download(timeout=90000) as download_info:
-        page.click('button.btn-outline-success:has-text("Exportar")')
+      # Aguarda o botão "Abrir" surgir e clica nele para efetuar o download nativo
+      page.wait_for_selector(
+          'a.btn-outline-success:text("Abrir")', timeout=90000
+      )
+      with page.expect_download(timeout=60000) as download_info:
+        page.click('a.btn-outline-success:text("Abrir")')
+
       download_info.value.save_as(CAMINHO_CSV_FINAL)
       return True
+
     except Exception as e:
       st.error(f"❌ Erro detalhado no Playwright: {e}")
       return False
@@ -286,8 +294,6 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
     st.error(
         "❌ As credenciais do remetente não foram configuradas nas Secrets."
     )
-  elif not USUARIO_PDV or not SENHA_PDV:
-    st.error("❌ As credenciais do PDV não foram configuradas nas Secrets.")
   else:
     status_container = st.status("Executando automação...", expanded=True)
     try:
@@ -421,7 +427,7 @@ if st.button("🚀 Iniciar Atualização e Disparo de E-mails", type="primary"):
         msg.attach(
             MIMEText(
                 f"<h3>Relatório Executivo</h3><p>Filial: <b>{filial_chave}</b> |"
-                f" Tipo: <b>{tipo_relatorio_escolhido}</b></p>",
+                f" Tipo: <b>{tipo_relatorio_escolhیدo}</b></p>",
                 "html",
             )
         )
